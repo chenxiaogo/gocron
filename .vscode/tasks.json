@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🔧 Build Server",
+      "type": "shell",
+      "command": "go",
+      "args": ["build", "-o", "../scheduler-server", "./cmd"],
+      "options": {
+        "cwd": "${workspaceFolder}/server",
+        "env": {
+          "CGO_ENABLED": "0"
+        }
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "🎨 Build Web",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}/web"
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    }
+  ]
+}

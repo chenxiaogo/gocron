@@ -1,0 +1,214 @@
+/* ============================================================
+   全局样式 —— 现代扁平 + 渐变点缀 · 深色侧边栏 · 清爽亮色内容区
+   ============================================================ */
+
+:root {
+  /* 品牌主色：现代蓝紫渐变系 */
+  --primary: #4f6ef7;
+  --primary-2: #7c5cf0;
+  --primary-gradient: linear-gradient(135deg, #4f6ef7 0%, #7c5cf0 100%);
+  --primary-color: #4f6ef7;
+  --primary-light: rgba(79, 110, 247, 0.12);
+
+  --success-color: #22c55e;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --info-color: #94a3b8;
+
+  --bg-color: #f5f6fa;             /* 主内容区浅灰背景 */
+  --card-radius: 12px;
+  --card-shadow: 0 1px 3px rgba(30, 41, 59, 0.06), 0 1px 2px rgba(30, 41, 59, 0.04);
+  --card-shadow-hover: 0 12px 28px rgba(30, 41, 59, 0.12);
+  --border-color: #e9ebf0;
+
+  /* 深色侧边栏 */
+  --sidebar-bg: linear-gradient(180deg, #1c2333 0%, #232c47 60%, #2a2f5a 100%);
+  --sidebar-text: #a6b0c8;
+  --sidebar-active: linear-gradient(135deg, #4f6ef7 0%, #7c5cf0 100%);
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-width: 232px;
+
+  /* Element Plus 主题色覆盖 */
+  --el-color-primary: #4f6ef7;
+  --el-color-primary-light-3: #7f93fa;
+  --el-color-primary-light-5: #a5b3fb;
+  --el-color-primary-light-7: #ccd4fd;
+  --el-color-primary-light-8: #e3e7fe;
+  --el-color-primary-light-9: #f1f3ff;
+  --el-color-primary-dark-2: #3f58c5;
+  --el-border-radius-base: 8px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+  font-family: 'Inter', -apple-system, 'Helvetica Neue', Helvetica, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-color);
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* 滚动条：纤细圆润 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============================================================
+   通用容器类
+   ============================================================ */
+
+/* 白色内容卡 */
+.app-card,
+.gva-table-box {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 20px;
+  margin-bottom: 16px;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.app-card:hover,
+.gva-table-box:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+/* 表头操作按钮区 */
+.gva-btn-list {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 搜索区卡片 */
+.gva-search-box {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 20px 20px 0;
+  margin-bottom: 16px;
+}
+
+/* 分页区（右对齐） */
+.gva-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-title .el-icon {
+  color: var(--primary-color);
+}
+
+/* 指标卡网格 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* 状态颜色 */
+.status-success { color: var(--success-color); }
+.status-failed { color: var(--danger-color); }
+.status-timeout { color: var(--warning-color); }
+.status-running { color: var(--primary-color); }
+
+/* ============================================================
+   Element Plus 全局覆写
+   ============================================================ */
+
+.el-button {
+  font-weight: 500;
+  border-radius: 8px;
+}
+
+.el-button--primary {
+  background: var(--primary-gradient);
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(79, 110, 247, 0.28);
+}
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background: var(--primary-gradient);
+  opacity: 0.9;
+  border-color: transparent;
+}
+
+/* 表格 */
+.el-table {
+  --el-table-header-bg-color: #f8fafc;
+  border-radius: 8px;
+}
+.el-table th.el-table__cell {
+  background-color: #f8fafc !important;
+  font-weight: 600;
+  color: #475569;
+}
+.el-table tr th .cell { font-weight: 600; color: #475569; }
+.el-table .el-table__row td .cell { color: #334155; }
+.el-table .el-table__row:hover > td.el-table__cell { background: #f5f7ff !important; }
+
+/* 标签圆角 */
+.el-tag { border-radius: 6px; font-weight: 500; }
+
+/* 卡片容器 */
+.el-card { border-radius: var(--card-radius); }
+
+/* 输入框/下拉圆角 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper { border-radius: 8px; }
+
+/* 弹窗圆角 */
+.el-dialog { border-radius: 14px; }
+.el-drawer { border-radius: 14px 0 0 14px; }
+
+/* 动画 */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in-up { animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fade-in { animation: fadeIn 0.4s ease both; }

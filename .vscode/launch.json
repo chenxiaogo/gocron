@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Server (Go)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/server/cmd/main.go",
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "GIN_MODE": "debug"
+      },
+      "envFile": "${workspaceFolder}/.vscode/.env",
+      "args": [],
+      "showLog": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Launch Web (Node - dev)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Build Web (Node - prod)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "build"],
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch Both (Server + Web)",
+      "configurations": [
+        "Launch Server (Go)",
+        "Launch Web (Node - dev)"
+      ],
+      "stopAll": true
+    }
+  ]
+}

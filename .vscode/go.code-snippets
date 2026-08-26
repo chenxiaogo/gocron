@@ -1,0 +1,19 @@
+{
+  "Gin Handler": {
+    "prefix": "ginhandler",
+    "body": [
+      "// $1 $2",
+      "// @Tags $3",
+      "// @Summary $2",
+      "// @Security ApiKeyAuth",
+      "// @accept application/json",
+      "// @Produce application/json",
+      "// @Success 200 {object} response.Response \"成功\"",
+      "// @Router /$4 [$5]",
+      "func (a *$6Api) $1(c *gin.Context) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Create a Gin handler with Swagger annotations"
+  }
+}

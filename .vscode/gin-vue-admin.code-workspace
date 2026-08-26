@@ -1,0 +1,35 @@
+{
+  "folders": [
+    {
+      "name": "🔧 Server (Go)",
+      "path": "./server"
+    },
+    {
+      "name": "🎨 Web (Vue)",
+      "path": "./web"
+    },
+    {
+      "name": "📚 Docs",
+      "path": "./docs"
+    }
+  ],
+  "settings": {
+    "go.gopath": "",
+    "go.goroot": "",
+    "go.toolsManagement.autoUpdate": true,
+    "typescript.preferences.importModuleSpecifier": "relative",
+    "eslint.workingDirectories": ["web"],
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "golang.go",
+      "vue.volar",
+      "bradlc.vscode-tailwindcss",
+      "esbenp.prettier-vscode",
+      "ms-vscode.vscode-typescript-next"
+    ]
+  }
+}

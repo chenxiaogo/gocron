@@ -1,0 +1,40 @@
+# Docker 环境配置 — 覆盖默认 config.yaml
+# 通过 docker-compose volumes 挂载到 /app/server/conf.d/config.yaml
+
+app:
+  name: scheduler-platform
+  env: production
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  driver: sqlite
+  dsn: /app/server/scheduler.db
+
+security:
+  jwtSecret: scheduler-platform-secret
+  tokenExpireHours: 24
+
+logger:
+  level: info
+  filePath: /app/server/logs
+  maxSize: 100
+
+metrics:
+  enabled: true
+  path: /metrics
+
+# 本地缓存（freecache，进程内，零网络开销，无需 Redis）
+cache:
+  enabled: true
+  defaultTtl: 10m
+  notFoundTtl: 2m
+  localEnabled: true
+  localSize: 268435456   # 256MB
+  localTtl: 3m
+  redisAddr: ""
+  redisPassword: ""
+  redisDb: 0
+  redisPoolSize: 0

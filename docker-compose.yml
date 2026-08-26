@@ -1,0 +1,118 @@
+# ============================================================
+# 调度平台 docker-compose.yml
+# 默认使用 SQLite 数据库 + 本地 freecache 缓存
+# 指定 IPv4 网络，禁止 IPv6
+# ============================================================
+
+version: "3.8"
+
+services:
+  # ---------- 调度平台 ----------
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scheduler-platform:latest
+    container_name: scheduler-platform
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Docker 环境配置
+      - ./server/conf.d/config-docker.yaml:/app/server/conf.d/config.yaml:ro
+      # 时区使用宿主机
+      - /etc/localtime:/etc/localtime:ro
+      # SQLite 数据库持久化
+      - scheduler-data:/app/server
+      # 日志持久化
+      - scheduler-logs:/app/server/logs
+    networks:
+      scheduler-net:
+        ipv4_address: 172.22.0.10
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ---------- Redis 缓存（可选，取消注释即可启用）----------
+  # 启用后需修改 server/conf.d/config.yaml 的 cache 配置：
+  #   redisAddr: "redis:6379"
+  #   redisPoolSize: 100
+  #
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: scheduler-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   command: >
+  #     redis-server
+  #     --appendonly yes
+  #     --maxmemory 256mb
+  #     --maxmemory-policy allkeys-lru
+  #     --bind 0.0.0.0
+  #   networks:
+  #     scheduler-net:
+  #       ipv4_address: 172.22.0.20
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
+
+  # ---------- MySQL（可选，取消注释即可启用）----------
+  # 启用后需修改 server/conf.d/config.yaml 的 database 配置：
+  #   driver: mysql
+  #   dsn: "root:root123@tcp(mysql:3306)/scheduler?charset=utf8mb4&parseTime=True&loc=Local"
+  #
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: scheduler-mysql
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - mysql-data:/var/lib/mysql
+  #     - ./server/conf.d/init.sql:/docker-entrypoint-initdb.d/init.sql
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: root123
+  #     MYSQL_DATABASE: scheduler
+  #     MYSQL_CHARSET: utf8mb4
+  #     MYSQL_COLLATION: utf8mb4_unicode_ci
+  #     TZ: Asia/Shanghai
+  #   networks:
+  #     scheduler-net:
+  #       ipv4_address: 172.22.0.30
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+# ---------- 数据卷 ----------
+volumes:
+  scheduler-data:
+    name: scheduler-data
+  scheduler-logs:
+    name: scheduler-logs
+  # redis-data:
+  #   name: scheduler-redis-data
+  # mysql-data:
+  #   name: scheduler-mysql-data
+
+# ---------- 网络（纯 IPv4）----------
+networks:
+  scheduler-net:
+    name: scheduler-net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.22.0.0/24
+          gateway: 172.22.0.1
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"

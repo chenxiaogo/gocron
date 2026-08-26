@@ -1,0 +1,37 @@
+# 调度平台 .dockerignore — 减少构建上下文
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Go
+server/vendor/
+server/logs/
+server/scheduler.db
+server/*.exe
+server/*.exe~
+server/*.dll
+server/*.so
+server/*.dylib
+
+# 前端
+web/node_modules/
+web/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 文档
+*.md
+docs/
+
+# 其他
+old/
+scheduler-server
+.codebuddy/
+.DS_Store
+Thumbs.db

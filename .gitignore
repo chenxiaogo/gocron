@@ -1,0 +1,16 @@
+# 后端（server/ 下）
+scheduler-server
+server/logs/
+server/conf.d/config.yaml
+server/*.db
+server/cmd/scheduler-server
+
+# 前端
+web/node_modules/
+web/dist/
+
+# 系统
+.DS_Store
+*.log
+old
+vendor

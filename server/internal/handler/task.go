@@ -59,6 +59,7 @@ func (h *TaskHandler) RegisterRoute(g *gin.RouterGroup) {
 // @Param keyword query string false "关键字"
 // @Param type query string false "任务类型"
 // @Param status query int false "状态"
+// @Param nodeId query int false "绑定节点ID"
 // @Param page query int false "页码"
 // @Param pageSize query int false "每页数量"
 // @Success 200 {object} map[string]interface{}
@@ -71,10 +72,11 @@ func (h *TaskHandler) List(c *gin.Context) {
 	if err != nil || statusStr == "" {
 		status = -1 // 空字符串视为不按状态过滤
 	}
+	nodeID, _ := strconv.ParseInt(c.DefaultQuery("nodeId", "0"), 10, 64)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 
-	tasks, total := h.store.PageTasks(tracex.FromRequest(c), keyword, ttype, status, page, pageSize)
+	tasks, total := h.store.PageTasks(tracex.FromRequest(c), keyword, ttype, status, nodeID, page, pageSize)
 	c.JSON(http.StatusOK, gin.H{
 		"list":     tasks,
 		"total":    total,

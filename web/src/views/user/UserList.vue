@@ -7,12 +7,21 @@
           <span>用户管理</span>
         </div>
         <div class="card-actions">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索用户名/昵称/邮箱"
+            clearable
+            :prefix-icon="Search"
+            style="width: 220px"
+            @keyup.enter="onSearch"
+            @clear="onSearch"
+          />
           <el-button :icon="Refresh" @click="loadUsers">刷新</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreate">新增用户</el-button>
         </div>
       </div>
 
-      <el-table :data="users" v-loading="loading" style="width: 100%" empty-text="暂无用户">
+      <el-table :data="filteredUsers" v-loading="loading" style="width: 100%" empty-text="暂无用户">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="nickname" label="昵称" min-width="120" />
@@ -91,8 +100,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Refresh, Plus, User } from '@element-plus/icons-vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { Refresh, Plus, User, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listUsers, createUser, updateUser, resetPassword, deleteUser } from '@/api/user'
 import { listRoles } from '@/api/role'
@@ -101,7 +110,18 @@ import { useUserStore } from '@/stores/user'
 const userStore = useUserStore()
 const loading = ref(false)
 const users = ref([])
+const keyword = ref('')
 const roles = ref([])
+
+const filteredUsers = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return users.value
+  return users.value.filter((u) =>
+    [u.username, u.nickname, u.email, u.roleName].some((f) => (f || '').toLowerCase().includes(kw))
+  )
+})
+
+function onSearch() {}
 const dialogVisible = ref(false)
 const resetVisible = ref(false)
 const resetTargetId = ref(null)

@@ -36,7 +36,15 @@ var (
 // ScrapePrometheus 从指定 URL 抓取 Prometheus 文本格式指标，转换为节点指标。
 // 支持 node_exporter 标准指标，也兼容 Go 运行时指标（process_* / go_memstats_*）。
 func ScrapePrometheus(url string, timeout time.Duration) *ScrapeResult {
-	client := &http.Client{Timeout: timeout}
+	return ScrapePrometheusWith(url, timeout, nil)
+}
+
+// ScrapePrometheusWith 使用指定 HTTP 客户端抓取（client 为 nil 时用默认客户端）。
+// 传入带代理的客户端即可让抓取走全局出站代理。
+func ScrapePrometheusWith(url string, timeout time.Duration, client *http.Client) *ScrapeResult {
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		return &ScrapeResult{Error: fmt.Sprintf("请求失败: %v", err)}

@@ -51,10 +51,10 @@ func NewServer(ctx context.Context) error {
 		return fmt.Errorf("init database: %w", err)
 	}
 	if err := db.AutoMigrate(
-		&model.Task{}, &model.Execution{}, &model.TaskLog{}, &model.Node{}, &model.User{},
+		&model.Task{}, &model.Execution{}, &model.TaskLog{}, &model.Node{}, &model.NodeMetricsSample{}, &model.User{},
 		&model.TaskNode{}, &model.Role{}, &model.Permission{}, &model.RolePermission{}, &model.UserRole{},
 		&model.Menu{}, &model.MenuBtn{}, &model.RoleMenu{}, &model.RoleMenuBtn{},
-		&model.Api{}, &model.CasbinRule{}, &model.NotifySetting{},
+		&model.Api{}, &model.CasbinRule{}, &model.NotifySetting{}, &model.GlobalProxy{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}

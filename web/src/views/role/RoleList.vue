@@ -7,12 +7,21 @@
           <span>角色管理</span>
         </div>
         <div class="card-actions">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索角色名/编码/描述"
+            clearable
+            :prefix-icon="Search"
+            style="width: 220px"
+            @keyup.enter="onSearch"
+            @clear="onSearch"
+          />
           <el-button :icon="Refresh" @click="loadRoles">刷新</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreate">新增角色</el-button>
         </div>
       </div>
 
-      <el-table :data="roles" v-loading="loading" style="width: 100%" empty-text="暂无角色">
+      <el-table :data="filteredRoles" v-loading="loading" style="width: 100%" empty-text="暂无角色">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="code" label="编码" width="120">
           <template #default="{ row }">
@@ -128,7 +137,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
-import { Refresh, Plus, Key } from '@element-plus/icons-vue'
+import { Refresh, Plus, Key, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listRoles, createRole, updateRole, deleteRole, listPermissions, setRolePerms, setRoleMenus, setRoleMenuBtns, setRoleApis } from '@/api/role'
 import { listMenus } from '@/api/menu'
@@ -136,7 +145,18 @@ import { listApis } from '@/api/api'
 
 const loading = ref(false)
 const roles = ref([])
+const keyword = ref('')
 const permissions = ref([])
+
+const filteredRoles = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return roles.value
+  return roles.value.filter((r) =>
+    [r.code, r.name, r.description].some((f) => (f || '').toLowerCase().includes(kw))
+  )
+})
+
+function onSearch() {}
 const allMenus = ref([]) // 全部菜单（扁平+树）
 const apis = ref([]) // 全部接口
 const dialogVisible = ref(false)

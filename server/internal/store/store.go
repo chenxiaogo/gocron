@@ -90,8 +90,8 @@ func (s *Store) CountTasksCreatedBefore(ctx context.Context, t time.Time) int64 
 	return c
 }
 
-// PageTasks 分页查询任务，支持按关键字/类型/状态筛选（下推到 SQL）。
-func (s *Store) PageTasks(ctx context.Context, keyword, ttype string, status int, page, pageSize int) ([]*model.Task, int64) {
+// PageTasks 分页查询任务，支持按关键字/类型/状态/绑定节点筛选（下推到 SQL）。
+func (s *Store) PageTasks(ctx context.Context, keyword, ttype string, status int, nodeID int64, page, pageSize int) ([]*model.Task, int64) {
 	query := s.db.WithContext(ctx).Model(&model.Task{})
 	if keyword != "" {
 		like := "%" + keyword + "%"
@@ -102,6 +102,11 @@ func (s *Store) PageTasks(ctx context.Context, keyword, ttype string, status int
 	}
 	if status >= 0 {
 		query = query.Where("status = ?", status)
+	}
+	// 按绑定节点筛选：子查询命中 task_nodes 关联表（仅 HTTP/gRPC/Shell 会绑定节点）
+	if nodeID > 0 {
+		sub := s.db.Model(&model.TaskNode{}).Select("task_id").Where("node_id = ?", nodeID)
+		query = query.Where("id IN (?)", sub)
 	}
 	var total int64
 	query.Count(&total)
@@ -197,22 +202,49 @@ func (s *Store) ListExecutions(ctx context.Context, limit int) []*model.Executio
 	return execs
 }
 
-// PageExecutions 分页查询执行记录，支持按任务/状态/触发方式筛选。
+// ExecutionQuery 执行记录查询条件。
+type ExecutionQuery struct {
+	TaskID   int64
+	Keyword  string // 任务名称模糊匹配
+	Worker   string // 节点名称
+	Status   string
+	Trigger  string
+	StartAt  time.Time // 开始时间范围（含）
+	EndAt    time.Time // 结束时间范围（含）
+	Page     int
+	PageSize int
+}
+
+// PageExecutions 分页查询执行记录，支持按任务/关键词/节点/状态/触发方式/时间范围筛选。
 // 返回记录列表与总数。
-func (s *Store) PageExecutions(ctx context.Context, taskID int64, status, trigger string, page, pageSize int) ([]*model.Execution, int64) {
+func (s *Store) PageExecutions(ctx context.Context, q ExecutionQuery) ([]*model.Execution, int64) {
 	query := s.db.WithContext(ctx).Model(&model.Execution{})
-	if taskID > 0 {
-		query = query.Where("task_id = ?", taskID)
+	if q.TaskID > 0 {
+		query = query.Where("task_id = ?", q.TaskID)
 	}
-	if status != "" {
-		query = query.Where("status = ?", status)
+	if q.Keyword != "" {
+		query = query.Where("task_name LIKE ?", "%"+q.Keyword+"%")
 	}
-	if trigger != "" {
-		query = query.Where("trigger_type = ?", trigger)
+	if q.Worker != "" {
+		query = query.Where("worker_name LIKE ?", "%"+q.Worker+"%")
+	}
+	if q.Status != "" {
+		query = query.Where("status = ?", q.Status)
+	}
+	if q.Trigger != "" {
+		query = query.Where("trigger_type = ?", q.Trigger)
+	}
+	if !q.StartAt.IsZero() {
+		query = query.Where("started_at >= ?", q.StartAt)
+	}
+	if !q.EndAt.IsZero() {
+		query = query.Where("started_at <= ?", q.EndAt)
 	}
 	var total int64
 	query.Count(&total)
 
+	page := q.Page
+	pageSize := q.PageSize
 	if page < 1 {
 		page = 1
 	}
@@ -432,25 +464,144 @@ func (s *Store) DefaultNode(ctx context.Context) (*model.Node, bool) {
 	return nil, false
 }
 
-// UpdateNodeMetrics 节点指标上报：通过 node_id 更新运行指标与心跳时间。
+// UpdateNodeMetrics 节点指标上报：通过 node_id 更新运行指标与心跳时间，并写入历史采样。
 func (s *Store) UpdateNodeMetrics(ctx context.Context, nodeID string, cpu, mem, disk, load float64, running int) bool {
+	var node model.Node
+	if err := s.db.WithContext(ctx).Where("node_id = ?", nodeID).First(&node).Error; err != nil {
+		return false
+	}
+	now := time.Now()
 	result := s.db.WithContext(ctx).Model(&model.Node{}).
-		Where("node_id = ?", nodeID).
+		Where("id = ?", node.ID).
 		Updates(map[string]interface{}{
 			"cpu_usage":      cpu,
 			"memory_usage":   mem,
 			"disk_usage":     disk,
 			"load_average":   load,
 			"running_tasks":  running,
-			"last_heartbeat": time.Now(),
-			"updated_at":     time.Now(),
+			"last_heartbeat": now,
+			"updated_at":     now,
 		})
 	if result.Error != nil {
 		return false
 	}
+	// 写入历史采样（异步不阻塞主流程，失败不影响主逻辑）
+	go s.appendMetricsSample(context.Background(), node.ID, nodeID, cpu, mem, disk, load, running, now)
 	// 更新后清除节点列表缓存，使 Dashboard 实时看到最新指标
 	s.invalidateNodeCache(ctx)
 	return result.RowsAffected > 0
+}
+
+// appendMetricsSample 追加一条节点指标采样。
+func (s *Store) appendMetricsSample(ctx context.Context, nodeID int64, nodeKey string, cpu, mem, disk, load float64, running int, sampledAt time.Time) {
+	s.db.WithContext(ctx).Create(&model.NodeMetricsSample{
+		NodeID:       nodeID,
+		NodeKey:      nodeKey,
+		CPUUsage:     cpu,
+		MemoryUsage:  mem,
+		DiskUsage:    disk,
+		LoadAverage:  load,
+		RunningTasks: running,
+		SampledAt:    sampledAt,
+	})
+}
+
+// ListNodeMetricsSamples 查询某节点的历史指标采样（按时间升序）。
+// rangeStr: 1h / 6h / 24h / 7d / 30d
+func (s *Store) ListNodeMetricsSamples(ctx context.Context, nodeID int64, rangeStr string) []*model.NodeMetricsSample {
+	since := s.rangeToSince(rangeStr)
+	var samples []*model.NodeMetricsSample
+	s.db.WithContext(ctx).
+		Where("node_id = ? AND sampled_at >= ?", nodeID, since).
+		Order("sampled_at ASC").
+		Find(&samples)
+	return samples
+}
+
+// rangeToSince 将时间范围字符串转为起始时间。
+func (s *Store) rangeToSince(rng string) time.Time {
+	now := time.Now()
+	switch rng {
+	case "1h":
+		return now.Add(-1 * time.Hour)
+	case "6h":
+		return now.Add(-6 * time.Hour)
+	case "24h":
+		return now.Add(-24 * time.Hour)
+	case "7d":
+		return now.AddDate(0, 0, -7)
+	case "30d":
+		return now.AddDate(0, 0, -30)
+	default:
+		return now.Add(-24 * time.Hour)
+	}
+}
+
+// CleanupNodeMetricsSamples 清理超过保留天数的历史采样（默认 7 天）。
+// 可由后台定时任务调用，或在启动时执行一次。
+func (s *Store) CleanupNodeMetricsSamples(ctx context.Context, retainDays int) int64 {
+	if retainDays <= 0 {
+		retainDays = 7
+	}
+	cutoff := time.Now().AddDate(0, 0, -retainDays)
+	result := s.db.WithContext(ctx).Where("sampled_at < ?", cutoff).Delete(&model.NodeMetricsSample{})
+	return result.RowsAffected
+}
+
+// CleanupExecutions 清理执行记录，支持两种策略：
+//  1. 时间维度：删除 started_at 早于 retainDays 天前的记录（保留最近 N 天）。
+//  2. 数量维度：当 maxPerTask > 0 时，每个任务只保留最新的 maxPerTask 条，
+//     超出部分（超量）按最旧优先删除。
+//
+// 关联的执行日志（task_logs）会一并删除，避免孤儿数据。
+// 返回删除的执行记录数与日志数。
+func (s *Store) CleanupExecutions(ctx context.Context, retainDays, maxPerTask int) (int64, int64) {
+	if retainDays <= 0 {
+		retainDays = 30
+	}
+	var delExec, delLog int64
+
+	// 1. 时间维度：删除超过保留天数的记录
+	cutoff := time.Now().AddDate(0, 0, -retainDays)
+	var oldIDs []int64
+	s.db.WithContext(ctx).Model(&model.Execution{}).
+		Where("started_at < ?", cutoff).Pluck("id", &oldIDs)
+	if len(oldIDs) > 0 {
+		if r := s.db.WithContext(ctx).Where("execution_id IN ?", oldIDs).Delete(&model.TaskLog{}); r.Error == nil {
+			delLog += r.RowsAffected
+		}
+		if r := s.db.WithContext(ctx).Where("id IN ?", oldIDs).Delete(&model.Execution{}); r.Error == nil {
+			delExec += r.RowsAffected
+		}
+	}
+
+	// 2. 数量维度：每任务只保留最新 maxPerTask 条（超量删除最旧的）
+	if maxPerTask > 0 {
+		var taskIDs []int64
+		s.db.WithContext(ctx).Model(&model.Execution{}).Distinct("task_id").Pluck("task_id", &taskIDs)
+		for _, tid := range taskIDs {
+			var keepIDs []int64
+			s.db.WithContext(ctx).Model(&model.Execution{}).
+				Where("task_id = ?", tid).Order("started_at DESC").Limit(maxPerTask).
+				Pluck("id", &keepIDs)
+			if len(keepIDs) <= maxPerTask {
+				continue
+			}
+			var excessIDs []int64
+			s.db.WithContext(ctx).Model(&model.Execution{}).
+				Where("task_id = ? AND id NOT IN ?", tid, keepIDs).Pluck("id", &excessIDs)
+			if len(excessIDs) == 0 {
+				continue
+			}
+			if r := s.db.WithContext(ctx).Where("execution_id IN ?", excessIDs).Delete(&model.TaskLog{}); r.Error == nil {
+				delLog += r.RowsAffected
+			}
+			if r := s.db.WithContext(ctx).Where("id IN ?", excessIDs).Delete(&model.Execution{}); r.Error == nil {
+				delExec += r.RowsAffected
+			}
+		}
+	}
+	return delExec, delLog
 }
 
 // invalidateNodeCache 清除节点列表缓存。

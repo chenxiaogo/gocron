@@ -19,3 +19,11 @@ export function getTaskStats(taskId) {
 export function getTaskHistory(taskId, limit) {
   return request.get(`/executions/task/${taskId}/history`, { params: { limit } })
 }
+
+export function getRetention() {
+  return request.get('/executions/retention')
+}
+
+export function cleanupExecutions(payload) {
+  return request.post('/executions/cleanup', payload)
+}

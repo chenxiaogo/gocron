@@ -16,17 +16,6 @@ export const useUserStore = defineStore('user', {
     hasPerm: (state) => (perm) => {
       if (state.user?.isAdmin) return true
       return (state.user?.perms || []).includes(perm)
-    },
-    // 按钮权限：通过菜单树中该菜单下的按钮名判断。
-    // v-btn="['task:add']" 或 v-btn="'task:add'"。
-    hasBtn: (state) => (permCode) => {
-      if (state.user?.isAdmin) return true
-      return (state.user?.perms || []).includes(permCode)
-    },
-    // 是否拥有某菜单（动态路由/侧边栏）
-    hasMenu: (state) => (path) => {
-      if (state.user?.isAdmin) return true
-      return state.menus.some((m) => m.path === path)
     }
   },
   actions: {

@@ -1,0 +1,51 @@
+# ============================================================
+# 调度平台配置 —— 测试环境（test）
+# 部署时由 docker-compose 挂载覆盖容器内 /app/server/conf.d/config.yaml
+# ============================================================
+
+app:
+  name: scheduler-platform
+  env: test
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  # 容器内固定路径，宿主机通过卷映射到 ${HOST_DATA_DIR}（默认 /data/gocron/data）
+  driver: sqlite
+  dsn: /data/scheduler.db
+  maxIdleConns: 10
+  maxOpenConns: 100
+  connMaxLifetime: 2h
+  # MySQL 示例（启用外置 MySQL 时改用）:
+  # driver: mysql
+  # dsn: "root:root123@tcp(mysql:3306)/scheduler?charset=utf8mb4&parseTime=True&loc=Local"
+
+security:
+  # 生产请通过 .env 的 SCHED_SECURITY_JWTSECRET 注入覆盖
+  jwtSecret: scheduler-platform-test-secret
+  tokenExpireHours: 24
+
+logger:
+  level: info
+  filePath: /app/server/logs
+  maxSize: 100
+
+metrics:
+  enabled: true
+  path: /metrics
+
+# 本地缓存（freecache，进程内，零依赖）
+cache:
+  enabled: true
+  defaultTtl: 10m
+  notFoundTtl: 2m
+  localEnabled: true
+  localSize: 268435456   # 256MB
+  localTtl: 3m
+  redisAddr: ""
+  redisPassword: ""
+  redisDb: 0
+  redisPoolSize: 0
+  dialTimeout: 5s

@@ -21,12 +21,11 @@ func (s *Store) InitPermissionData(ctx context.Context, enforcer *casbin.Enforce
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 0. 修正既有菜单的 component 路径（幂等迁移，兼容早期 `view/task/index` 等旧写法）
 		s.fixMenuComponents(tx)
-		// 0.1 菜单结构迁移：旧的「系统管理」目录 → 新的「设置」目录
-		s.migrateSystemMenu(tx)
-		// 0.2 菜单结构迁移：任务/执行/节点 → 「任务管理」目录下子菜单；用户/角色/菜单/接口 → 「设置」目录下子菜单
+		// 1. 菜单结构迁移：将多级结构（任务管理/设置目录）或历史结构统一重排为目标扁平结构
+		//    （概览/节点/任务/执行记录/通知配置 顶级 + 系统管理目录）。
 		menuMigrated = s.migrateMenuStructure(tx)
 
-		// 1. 菜单 + 按钮
+		// 2. 菜单 + 按钮（仅新库写入，旧库由迁移对齐）
 		var menuCount int64
 		if err := tx.Model(&model.Menu{}).Count(&menuCount).Error; err != nil {
 			return err
@@ -35,12 +34,9 @@ func (s *Store) InitPermissionData(ctx context.Context, enforcer *casbin.Enforce
 			if err := s.seedMenus(tx); err != nil {
 				return err
 			}
-		} else {
-			// 旧库升级：幂等补齐通知配置菜单（挂到设置目录下）
-			s.ensureNotifyMenu(tx)
 		}
 
-		// 2. 受管 API（幂等：缺失的 API 自动补齐，兼容既有库升级）
+		// 3. 受管 API（幂等：缺失的 API 自动补齐，兼容既有库升级）
 		var err error
 		added, err = s.ensureApis(tx)
 		return err
@@ -64,57 +60,33 @@ func (s *Store) InitPermissionData(ctx context.Context, enforcer *casbin.Enforce
 func (s *Store) fixMenuComponents(tx *gorm.DB) {
 	// 旧 component -> 当前前端真实文件路径
 	legacy := map[string]string{
-		"view/dashboard/index":   "view/dashboard/Dashboard",
-		"view/task/index":        "view/task/TaskList",
-		"view/execution/index":   "view/execution/ExecutionList",
-		"view/node/index":        "view/node/NodeList",
-		"view/user/index":        "view/user/UserList",
-		"view/role/index":        "view/role/RoleList",
-		"view/system/menu":       "view/system/MenuManage",
-		"view/system/api":        "view/system/ApiManage",
-		"view/task/list":         "view/task/TaskList",
-		"view/execution/list":    "view/execution/ExecutionList",
-		"view/node/list":         "view/node/NodeList",
-		"view/user/list":         "view/user/UserList",
-		"view/role/list":         "view/role/RoleList",
-		"view/system/menus":      "view/system/MenuManage",
-		"view/system/apis":       "view/system/ApiManage",
+		"view/dashboard/index": "view/dashboard/Dashboard",
+		"view/task/index":      "view/task/TaskList",
+		"view/execution/index": "view/execution/ExecutionList",
+		"view/node/index":      "view/node/NodeList",
+		"view/user/index":      "view/user/UserList",
+		"view/role/index":      "view/role/RoleList",
+		"view/system/menu":     "view/system/MenuManage",
+		"view/system/api":      "view/system/ApiManage",
+		"view/task/list":       "view/task/TaskList",
+		"view/execution/list":  "view/execution/ExecutionList",
+		"view/node/list":       "view/node/NodeList",
+		"view/user/list":       "view/user/UserList",
+		"view/role/list":       "view/role/RoleList",
+		"view/system/menus":    "view/system/MenuManage",
+		"view/system/apis":     "view/system/ApiManage",
 	}
 	for old, current := range legacy {
 		tx.Model(&model.Menu{}).Where("component = ?", old).Update("component", current)
 	}
 }
 
-// migrateSystemMenu 将旧的「系统管理」目录迁移为新的「设置」顶级菜单。
-// 幂等：仅当存在名为 System 的顶级目录时才处理；子菜单（用户/角色/菜单/接口）保留路由但改为隐藏，
-// 使它们不在侧边栏单独展示，而是由设置页按权限以内嵌标签页呈现。
-func (s *Store) migrateSystemMenu(tx *gorm.DB) {
-	var sys model.Menu
-	err := tx.Where("name = ? AND type = ? AND parent_id = 0", "System", "dir").First(&sys).Error
-	if err != nil || sys.ID == 0 {
-		// 无旧结构（新库或已迁移），无需处理
-		return
-	}
-	// 更新为「设置」目录，其下子菜单在侧边栏展开显示
-	updates := map[string]interface{}{
-		"title":     "设置",
-		"icon":      "Setting",
-		"path":      "/settings",
-		"type":      "dir",
-		"component": "",
-		"name":      "Settings",
-		"perm_code": model.PermRoleManage,
-	}
-	tx.Model(&model.Menu{}).Where("id = ?", sys.ID).Updates(updates)
-	// 子菜单取消隐藏，改为在侧边栏展开显示
-	tx.Model(&model.Menu{}).Where("parent_id = ?", sys.ID).Update("hidden", false)
-}
-
-// migrateMenuStructure 将旧版菜单结构迁移为新版多级结构。
-// 目标结构：首页(menu) / 任务管理(dir：任务列表/执行记录/节点管理) / 设置(dir：用户/角色/菜单/接口)
-// 兼容多种历史结构：任务/执行/节点可能为独立顶级 menu，用户/角色/菜单/接口可能为顶级 menu。
-// 返回是否发生了迁移（调用方需据此在事务提交后重建内置角色菜单绑定）。
-// 幂等：以 name 为锚点定位菜单，检测到已迁移则仅补全设置子项可见性并返回 false。
+// migrateMenuStructure 将既有菜单结构（多级「任务管理/设置」目录，或历史扁平结构）统一重排为
+// 目标扁平结构：概览 / 节点 / 任务 / 执行记录 / 通知配置（顶级叶子）+ 系统管理（目录）。
+// 兼容当前多级库：Tasks 为目录、含 TaskList/ExecutionList/NodeList 子菜单；Settings 为目录、含 Users/Roles/Menus/Apis/Notify。
+// 兼容历史库：任务/执行/节点为独立顶级菜单、用户/角色/菜单/接口为独立顶级菜单（归并到系统管理目录）。
+// 返回是否发生了迁移（调用方据此在事务提交后重建内置角色菜单绑定）。
+// 幂等：检测到已是目标扁平结构（存在顶级 Nodes 菜单与系统管理目录）则直接返回 false。
 func (s *Store) migrateMenuStructure(tx *gorm.DB) bool {
 	getByName := func(name string) *model.Menu {
 		var m model.Menu
@@ -124,76 +96,91 @@ func (s *Store) migrateMenuStructure(tx *gorm.DB) bool {
 		return &m
 	}
 
-	tasks := getByName("Tasks")
-	if tasks == nil {
-		return false
-	}
-	taskList := getByName("TaskList")
-	// 幂等判断：任务管理已是目录且存在挂在其下的任务列表子菜单 → 已迁移
-	if tasks.Type == "dir" && tasks.ParentID == 0 && taskList != nil && taskList.ParentID == tasks.ID {
-		if settings := getByName("Settings"); settings != nil {
-			tx.Model(&model.Menu{}).Where("parent_id = ?", settings.ID).Update("hidden", false)
+	// 幂等：已是目标扁平结构则跳过
+	if nodes := getByName("Nodes"); nodes != nil && nodes.Type == "menu" && nodes.ParentID == 0 {
+		if sys := getByName("System"); sys != nil && sys.Type == "dir" {
+			return false
 		}
-		return false
 	}
 
 	now := time.Now()
 
-	// 1. 任务管理 → 目录
-	tx.Model(&model.Menu{}).Where("id = ?", tasks.ID).Updates(map[string]interface{}{
-		"type": "dir", "title": "任务管理", "icon": "List", "component": "",
-		"path": "/tasks", "perm_code": model.PermTaskView,
-	})
-
-	// 2. 执行管理 → 任务管理下的「执行记录」子菜单
-	if execs := getByName("Executions"); execs != nil {
-		tx.Model(&model.Menu{}).Where("id = ?", execs.ID).Updates(map[string]interface{}{
-			"parent_id": tasks.ID, "name": "ExecutionList", "title": "执行记录",
-			"path": "/tasks/executions", "sort": 2, "hidden": false, "perm_code": model.PermExecView,
+	// 1. 系统管理目录：优先复用旧 Settings 目录，否则新建
+	system := getByName("System")
+	if system == nil {
+		system = getByName("Settings")
+	}
+	if system == nil {
+		system = &model.Menu{Name: "System", Path: "/system", Title: "系统管理", Icon: "Setting",
+			Type: "dir", PermCode: model.PermRoleManage, ParentID: 0, Sort: 6, CreatedAt: now}
+		tx.Create(system)
+	} else {
+		tx.Model(&model.Menu{}).Where("id = ?", system.ID).Updates(map[string]interface{}{
+			"name": "System", "title": "系统管理", "icon": "Setting", "path": "/system",
+			"type": "dir", "component": "", "perm_code": model.PermRoleManage, "parent_id": 0,
 		})
 	}
 
-	// 3. 节点管理 → 任务管理下的「节点管理」子菜单
-	if nodes := getByName("Nodes"); nodes != nil {
-		tx.Model(&model.Menu{}).Where("id = ?", nodes.ID).Updates(map[string]interface{}{
-			"parent_id": tasks.ID, "name": "NodeList", "title": "节点管理",
-			"path": "/tasks/nodes", "sort": 3, "hidden": false, "perm_code": model.PermNodeView,
-		})
-	}
-
-	// 4. 新增/对齐「任务列表」子菜单，并将 Tasks 原按钮归并到其上
-	if taskList == nil {
-		taskList = &model.Menu{Name: "TaskList", Path: "/tasks/list", Component: "view/task/TaskList", Title: "任务列表", Icon: "List", Sort: 1, Type: "menu", PermCode: model.PermTaskView, ParentID: tasks.ID, CreatedAt: now}
-		tx.Create(taskList)
-	}
-	tx.Model(&model.Menu{}).Where("id = ?", taskList.ID).Updates(map[string]interface{}{
-		"parent_id": tasks.ID, "path": "/tasks/list", "component": "view/task/TaskList",
-		"title": "任务列表", "sort": 1, "hidden": false, "perm_code": model.PermTaskView,
-	})
-	tx.Model(&model.MenuBtn{}).Where("menu_id = ?", tasks.ID).Update("menu_id", taskList.ID)
-
-	// 5. 设置 → 目录；将顶级/子级 Users/Roles/Menus/Apis 统一归入其下
-	settings := getByName("Settings")
-	if settings != nil {
-		tx.Model(&model.Menu{}).Where("id = ?", settings.ID).Updates(map[string]interface{}{
-			"type": "dir", "title": "设置", "icon": "Setting", "path": "/settings",
-			"component": "", "perm_code": model.PermRoleManage,
-		})
-		children := []struct {
-			name string
-			path string
-		}{
-			{"Users", "/settings/users"},
-			{"Roles", "/settings/roles"},
-			{"Menus", "/settings/menus"},
-			{"Apis", "/settings/apis"},
-		}
-		for i, c := range children {
-			if cm := getByName(c.name); cm != nil {
-				tx.Model(&model.Menu{}).Where("id = ?", cm.ID).Updates(map[string]interface{}{
-					"parent_id": settings.ID, "path": c.path, "hidden": false, "sort": i + 1,
-				})
+	// 2. 顶级叶子菜单：存在则提升/改名，不存在则新建（兼容历史命名 ExecutionList/NodeList）
+	ensureTop := func(name, title, path, component, icon, perm string, sort int) *model.Menu {
+		m := getByName(name)
+		if m == nil {
+			switch name {
+			case "Executions":
+				m = getByName("ExecutionList")
+			case "Nodes":
+				m = getByName("NodeList")
 			}
+		}
+		if m == nil {
+			m = &model.Menu{Name: name, Path: path, Component: component, Title: title, Icon: icon,
+				Type: "menu", PermCode: perm, ParentID: 0, Sort: sort, CreatedAt: now}
+			tx.Create(m)
+			return m
+		}
+		tx.Model(&model.Menu{}).Where("id = ?", m.ID).Updates(map[string]interface{}{
+			"name": name, "parent_id": 0, "path": path, "component": component, "title": title,
+			"icon": icon, "type": "menu", "perm_code": perm, "hidden": false, "sort": sort,
+		})
+		return m
+	}
+
+	ensureTop("Dashboard", "首页", "/dashboard", "view/dashboard/Dashboard", "Odometer", "", 1)
+	tasks := ensureTop("Tasks", "任务", "/tasks", "view/task/TaskList", "List", model.PermTaskView, 3)
+	ensureTop("Nodes", "节点管理", "/nodes", "view/node/NodeList", "Monitor", model.PermNodeView, 2)
+	ensureTop("Executions", "执行记录", "/executions", "view/execution/ExecutionList", "Timer", model.PermExecView, 4)
+	ensureTop("Notify", "通知配置", "/notify", "view/settings/NotifyManage", "Bell", model.PermNotifyManage, 5)
+
+	// 3. Tasks 原按钮（挂在历史 TaskList 上）迁移到新的 Tasks 菜单，并删除冗余 TaskList
+	if oldTask := getByName("TaskList"); oldTask != nil {
+		tx.Model(&model.MenuBtn{}).Where("menu_id = ?", oldTask.ID).Update("menu_id", tasks.ID)
+		tx.Where("menu_id = ?", oldTask.ID).Delete(&model.RoleMenu{})
+		tx.Where("menu_id = ?", oldTask.ID).Delete(&model.RoleMenuBtn{})
+		tx.Where("menu_id = ?", oldTask.ID).Delete(&model.MenuBtn{})
+		tx.Delete(&model.Menu{ID: oldTask.ID})
+	}
+
+	// 4. 系统管理目录下的子菜单：用户 / 角色 / 菜单 / 接口
+	children := []struct {
+		name, path, title, component, icon, perm string
+		sort                                     int
+	}{
+		{"Users", "/users", "用户管理", "view/user/UserList", "User", model.PermUserManage, 1},
+		{"Roles", "/roles", "角色管理", "view/role/RoleList", "Key", model.PermRoleManage, 2},
+		{"Menus", "/menus", "菜单管理", "view/system/MenuManage", "Grid", model.PermRoleManage, 3},
+		{"Apis", "/apis", "接口管理", "view/system/ApiManage", "Link", model.PermRoleManage, 4},
+	}
+	for _, c := range children {
+		m := getByName(c.name)
+		if m == nil {
+			m = &model.Menu{Name: c.name, Path: c.path, Component: c.component, Title: c.title, Icon: c.icon,
+				Type: "menu", PermCode: c.perm, ParentID: system.ID, Sort: c.sort, CreatedAt: now}
+			tx.Create(m)
+		} else {
+			tx.Model(&model.Menu{}).Where("id = ?", m.ID).Updates(map[string]interface{}{
+				"parent_id": system.ID, "path": c.path, "component": c.component, "title": c.title,
+				"icon": c.icon, "type": "menu", "perm_code": c.perm, "hidden": false, "sort": c.sort,
+			})
 		}
 	}
 
@@ -257,48 +244,34 @@ func (s *Store) RebuildBuiltinRoleMenus(ctx context.Context) {
 	}
 }
 
-// seedMenus 写入默认菜单树与按钮。
-// 新库初始化时的菜单结构（旧库由 migrateMenuStructure 迁移对齐）：
-//   首页（顶级）｜任务管理（目录：任务列表 / 执行记录 / 节点管理）｜设置（目录：用户 / 角色 / 菜单 / 接口）
+// seedMenus 写入默认菜单树与按钮（目标扁平结构）。
+// 结构：概览 / 节点 / 任务 / 执行记录 / 通知配置（顶级叶子）+ 系统管理（目录：用户 / 角色 / 菜单 / 接口）。
 func (s *Store) seedMenus(tx *gorm.DB) error {
 	now := time.Now()
 
-	// 顶级菜单：首页
+	// 顶级叶子菜单
 	dashboard := &model.Menu{Name: "Dashboard", Path: "/dashboard", Component: "view/dashboard/Dashboard", Title: "首页", Icon: "Odometer", Sort: 1, Type: "menu", CreatedAt: now}
-	if err := tx.Create(dashboard).Error; err != nil {
-		return err
-	}
-
-	// 任务管理：目录，其下含任务列表 / 执行记录 / 节点管理
-	taskDir := &model.Menu{Name: "Tasks", Path: "/tasks", Title: "任务管理", Icon: "List", Sort: 2, Type: "dir", PermCode: model.PermTaskView, CreatedAt: now}
-	if err := tx.Create(taskDir).Error; err != nil {
-		return err
-	}
-	taskList := &model.Menu{Name: "TaskList", Path: "/tasks/list", Component: "view/task/TaskList", Title: "任务列表", Icon: "List", Sort: 1, Type: "menu", PermCode: model.PermTaskView, CreatedAt: now}
-	execList := &model.Menu{Name: "ExecutionList", Path: "/tasks/executions", Component: "view/execution/ExecutionList", Title: "执行记录", Icon: "Timer", Sort: 2, Type: "menu", PermCode: model.PermExecView, CreatedAt: now}
-	nodeList := &model.Menu{Name: "NodeList", Path: "/tasks/nodes", Component: "view/node/NodeList", Title: "节点管理", Icon: "Monitor", Sort: 3, Type: "menu", PermCode: model.PermNodeView, CreatedAt: now}
-	taskChildren := []*model.Menu{taskList, execList, nodeList}
-	for _, c := range taskChildren {
-		c.ParentID = taskDir.ID
-		if err := tx.Create(c).Error; err != nil {
+	nodeMenu := &model.Menu{Name: "Nodes", Path: "/nodes", Component: "view/node/NodeList", Title: "节点管理", Icon: "Monitor", Sort: 2, Type: "menu", PermCode: model.PermNodeView, CreatedAt: now}
+	taskMenu := &model.Menu{Name: "Tasks", Path: "/tasks", Component: "view/task/TaskList", Title: "任务", Icon: "List", Sort: 3, Type: "menu", PermCode: model.PermTaskView, CreatedAt: now}
+	execMenu := &model.Menu{Name: "Executions", Path: "/executions", Component: "view/execution/ExecutionList", Title: "执行记录", Icon: "Timer", Sort: 4, Type: "menu", PermCode: model.PermExecView, CreatedAt: now}
+	notifyMenu := &model.Menu{Name: "Notify", Path: "/notify", Component: "view/settings/NotifyManage", Title: "通知配置", Icon: "Bell", Sort: 5, Type: "menu", PermCode: model.PermNotifyManage, CreatedAt: now}
+	for _, m := range []*model.Menu{dashboard, nodeMenu, taskMenu, execMenu, notifyMenu} {
+		if err := tx.Create(m).Error; err != nil {
 			return err
 		}
 	}
 
-	// 设置：目录，其下含用户 / 角色 / 菜单 / 接口管理
-	// 挂 PermRoleManage，保证仅具备角色管理权限的角色（默认仅 admin）能看到「设置」入口。
-	settingsDir := &model.Menu{Name: "Settings", Path: "/settings", Title: "设置", Icon: "Setting", Sort: 3, Type: "dir", PermCode: model.PermRoleManage, CreatedAt: now}
-	if err := tx.Create(settingsDir).Error; err != nil {
+	// 系统管理：目录（仅具备角色管理权限的角色可见）
+	systemDir := &model.Menu{Name: "System", Path: "/system", Title: "系统管理", Icon: "Setting", Sort: 6, Type: "dir", PermCode: model.PermRoleManage, CreatedAt: now}
+	if err := tx.Create(systemDir).Error; err != nil {
 		return err
 	}
-	userMenu := &model.Menu{Name: "Users", Path: "/settings/users", Component: "view/user/UserList", Title: "用户管理", Icon: "User", Sort: 1, Type: "menu", PermCode: model.PermUserManage, CreatedAt: now}
-	roleMenu := &model.Menu{Name: "Roles", Path: "/settings/roles", Component: "view/role/RoleList", Title: "角色管理", Icon: "Key", Sort: 2, Type: "menu", PermCode: model.PermRoleManage, CreatedAt: now}
-	menuMgmt := &model.Menu{Name: "Menus", Path: "/settings/menus", Component: "view/system/MenuManage", Title: "菜单管理", Icon: "Grid", Sort: 3, Type: "menu", PermCode: model.PermRoleManage, CreatedAt: now}
-	apiMgmt := &model.Menu{Name: "Apis", Path: "/settings/apis", Component: "view/system/ApiManage", Title: "接口管理", Icon: "Link", Sort: 4, Type: "menu", PermCode: model.PermRoleManage, CreatedAt: now}
-	notifyMenu := &model.Menu{Name: "Notify", Path: "/settings/notify", Component: "view/settings/NotifyManage", Title: "通知配置", Icon: "Bell", Sort: 5, Type: "menu", PermCode: model.PermNotifyManage, CreatedAt: now}
-	settingChildren := []*model.Menu{userMenu, roleMenu, menuMgmt, apiMgmt, notifyMenu}
-	for _, c := range settingChildren {
-		c.ParentID = settingsDir.ID
+	userMenu := &model.Menu{Name: "Users", Path: "/users", Component: "view/user/UserList", Title: "用户管理", Icon: "User", Sort: 1, Type: "menu", PermCode: model.PermUserManage, CreatedAt: now}
+	roleMenu := &model.Menu{Name: "Roles", Path: "/roles", Component: "view/role/RoleList", Title: "角色管理", Icon: "Key", Sort: 2, Type: "menu", PermCode: model.PermRoleManage, CreatedAt: now}
+	menuMgmt := &model.Menu{Name: "Menus", Path: "/menus", Component: "view/system/MenuManage", Title: "菜单管理", Icon: "Grid", Sort: 3, Type: "menu", PermCode: model.PermRoleManage, CreatedAt: now}
+	apiMgmt := &model.Menu{Name: "Apis", Path: "/apis", Component: "view/system/ApiManage", Title: "接口管理", Icon: "Link", Sort: 4, Type: "menu", PermCode: model.PermRoleManage, CreatedAt: now}
+	for _, c := range []*model.Menu{userMenu, roleMenu, menuMgmt, apiMgmt} {
+		c.ParentID = systemDir.ID
 		if err := tx.Create(c).Error; err != nil {
 			return err
 		}
@@ -323,9 +296,9 @@ func (s *Store) seedMenus(tx *gorm.DB) error {
 		menuID int64
 		btns   []*model.MenuBtn
 	}{
-		{taskList.ID, taskBtns},
-		{execList.ID, execBtns},
-		{nodeList.ID, nodeBtns},
+		{taskMenu.ID, taskBtns},
+		{execMenu.ID, execBtns},
+		{nodeMenu.ID, nodeBtns},
 	}
 	for _, g := range btnGroups {
 		for _, b := range g.btns {
@@ -337,28 +310,6 @@ func (s *Store) seedMenus(tx *gorm.DB) error {
 		}
 	}
 	return nil
-}
-
-// ensureNotifyMenu 幂等补齐「通知配置」子菜单（挂到设置目录下）。
-// 用于既有库升级：seedMenus 只在新库调用，此处保证旧库也能出现通知菜单。
-func (s *Store) ensureNotifyMenu(tx *gorm.DB) {
-	var settings model.Menu
-	if err := tx.Where("name = ? AND type = ?", "Settings", "dir").First(&settings).Error; err != nil || settings.ID == 0 {
-		return
-	}
-	var n model.Menu
-	if err := tx.Where("name = ?", "Notify").First(&n).Error; err == nil && n.ID != 0 {
-		// 已存在：仅对齐挂载关系
-		tx.Model(&model.Menu{}).Where("id = ?", n.ID).Updates(map[string]interface{}{
-			"parent_id": settings.ID, "path": "/settings/notify", "hidden": false, "sort": 5,
-		})
-		return
-	}
-	tx.Create(&model.Menu{
-		Name: "Notify", ParentID: settings.ID, Path: "/settings/notify",
-		Component: "view/settings/NotifyManage", Title: "通知配置", Icon: "Bell",
-		Sort: 5, Type: "menu", PermCode: model.PermNotifyManage, CreatedAt: time.Now(),
-	})
 }
 
 // defaultApis 返回系统默认受管 API（path+method）清单。

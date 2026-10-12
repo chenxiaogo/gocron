@@ -69,6 +69,17 @@ type Config struct {
 	Extract map[string]string `json:"extract"`
 }
 
+// client 返回本次执行使用的 HTTP 客户端：全局代理启用时走代理，否则用默认客户端。
+// 每次执行读取一次配置，保证代理改动无需重启即可生效。
+func (e *Executor) client(ctx context.Context) *http.Client {
+	cfg := e.store.ProxyConfig(ctx)
+	if !cfg.Valid() {
+		return e.http
+	}
+	// 无全局超时，具体超时由每次执行按 task.Timeout 控制
+	return cfg.Client(0)
+}
+
 // authHeader 根据认证配置生成请求头。
 func (c *Config) authHeader() map[string]string {
 	h := map[string]string{}
@@ -301,7 +312,7 @@ func (e *Executor) runHTTPOnce(ctx context.Context, cfg *Config, url string) (st
 	}
 
 	start := time.Now()
-	resp, err := e.http.Do(req)
+	resp, err := e.client(ctx).Do(req)
 	duration := time.Since(start).Milliseconds()
 	if err != nil {
 		return "failed", err.Error(), duration,

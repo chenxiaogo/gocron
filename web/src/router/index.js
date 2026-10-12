@@ -23,6 +23,12 @@ const router = createRouter({
           name: 'Dashboard',
           component: () => import('@/views/dashboard/Dashboard.vue'),
           meta: { title: '首页', icon: 'Odometer' }
+        },
+        {
+          path: 'nodes/:id/tasks',
+          name: 'NodeTasks',
+          component: () => import('@/views/node/NodeTasks.vue'),
+          meta: { title: '节点任务', icon: 'List' }
         }
       ]
     },

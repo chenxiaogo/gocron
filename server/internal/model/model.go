@@ -119,6 +119,7 @@ type Node struct {
 	Name           string    `json:"name" gorm:"size:64"`
 	Address        string    `json:"address" gorm:"size:128"`
 	MetricsURL     string    `json:"metricsUrl" gorm:"size:512"` // Prometheus metrics 端点地址
+	Proxy          string    `json:"proxy" gorm:"size:256"`      // 节点专属出站代理（http://user:pass@host:port 或 socks5://host:port），空则回落全局代理
 	OS             string    `json:"os" gorm:"size:64"`
 	Version        string    `json:"version" gorm:"size:32"`
 	Status         string    `json:"status" gorm:"size:16;index"` // online/offline/busy/warning/error
@@ -131,6 +132,20 @@ type Node struct {
 	LastHeartbeat  time.Time `json:"lastHeartbeat"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+// GlobalProxy 全局出站代理配置（单条记录，ID 固定为 1）。
+// 用于调度中心访问节点/外部接口时统一走代理（机场类 HTTP/SOCKS5 代理）。
+type GlobalProxy struct {
+	ID        int64     `json:"id" gorm:"primaryKey"`
+	Enabled   bool      `json:"enabled"`                 // 是否启用
+	Type      string    `json:"type" gorm:"size:16"`     // http / socks5
+	Host      string    `json:"host" gorm:"size:128"`    // 代理 IP 或域名
+	Port      int       `json:"port"`                    // 代理端口
+	Username  string    `json:"username" gorm:"size:128"`
+	Password  string    `json:"password" gorm:"size:256"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // User 用户
@@ -187,6 +202,20 @@ type RolePermission struct {
 	RoleID       int64     `json:"roleId" gorm:"uniqueIndex:idx_role_perm;index"`
 	PermissionID int64     `json:"permissionId" gorm:"uniqueIndex:idx_role_perm;index"`
 	CreatedAt    time.Time `json:"createdAt"`
+}
+
+// NodeMetricsSample 节点指标历史采样（时序数据，供趋势图展示）。
+// 每次节点上报或主动抓取时落一条，保留最近 7 天，定期清理。
+type NodeMetricsSample struct {
+	ID            int64     `json:"id" gorm:"primaryKey"`
+	NodeID        int64     `json:"nodeId" gorm:"index:idx_node_time"`
+	NodeKey       string    `json:"nodeKey" gorm:"size:64;index"` // 冗余 node_id 字符串，便于查询
+	CPUUsage      float64   `json:"cpuUsage"`
+	MemoryUsage   float64   `json:"memoryUsage"`
+	DiskUsage     float64   `json:"diskUsage"`
+	LoadAverage   float64   `json:"loadAverage"`
+	RunningTasks  int       `json:"runningTasks"`
+	SampledAt     time.Time `json:"sampledAt" gorm:"index:idx_node_time"`
 }
 
 // NotifySetting 全局通知配置（单行：ID 恒为 1）。

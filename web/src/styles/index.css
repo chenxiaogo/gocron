@@ -83,8 +83,7 @@ a {
    ============================================================ */
 
 /* 白色内容卡 */
-.app-card,
-.gva-table-box {
+.app-card {
   background: #fff;
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
@@ -93,35 +92,8 @@ a {
   margin-bottom: 16px;
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
-.app-card:hover,
-.gva-table-box:hover {
+.app-card:hover {
   box-shadow: var(--card-shadow-hover);
-}
-
-/* 表头操作按钮区 */
-.gva-btn-list {
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* 搜索区卡片 */
-.gva-search-box {
-  background: #fff;
-  border: 1px solid var(--border-color);
-  border-radius: var(--card-radius);
-  box-shadow: var(--card-shadow);
-  padding: 20px 20px 0;
-  margin-bottom: 16px;
-}
-
-/* 分页区（右对齐） */
-.gva-pagination {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
 }
 
 .page-title {
@@ -160,16 +132,26 @@ a {
   border-radius: 8px;
 }
 
-.el-button--primary {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
   background: var(--primary-gradient);
   border-color: transparent;
   box-shadow: 0 4px 12px rgba(79, 110, 247, 0.28);
 }
-.el-button--primary:hover,
-.el-button--primary:focus {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):hover,
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):focus {
   background: var(--primary-gradient);
   opacity: 0.9;
   border-color: transparent;
+}
+
+/* 文字链接按钮：无背景、无边框、无阴影 */
+.el-button.is-link,
+.el-button.is-text {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  height: auto;
+  padding: 2px 4px;
 }
 
 /* 表格 */
@@ -197,9 +179,27 @@ a {
 .el-textarea__inner,
 .el-select__wrapper { border-radius: 8px; }
 
+/* 输入框聚焦高亮（含搜索框）：统一主色聚焦环，提升可识别性 */
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px var(--primary-light) !important;
+}
+
 /* 弹窗圆角 */
 .el-dialog { border-radius: 14px; }
 .el-drawer { border-radius: 14px 0 0 14px; }
+
+/* 按钮交互增强：统一过渡 + 链接按钮 hover */
+.el-button { transition: all 0.2s ease; }
+.el-button.is-link:hover,
+.el-button.is-text:hover { opacity: 0.85; }
+
+/* 搜索框 / 输入框 hover 边框高亮（与聚焦态呼应） */
+.el-input__wrapper:hover:not(.is-focus) {
+  box-shadow: 0 0 0 1px var(--el-color-primary-light-5) inset;
+}
+
+/* 表格操作列链接按钮统一间距，避免拥挤 */
+.el-table .el-table__row td .cell .el-button.is-link { margin: 0 2px; }
 
 /* 动画 */
 @keyframes fadeInUp {

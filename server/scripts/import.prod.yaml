@@ -1,0 +1,31 @@
+# ============================================================
+# 调度平台初始化导入清单 —— 生产环境（prod）
+# 说明：
+#   表结构由后端启动时 GORM AutoMigrate 自动创建；
+#   默认管理员（admin / admin123）、内置角色/菜单/权限由后端种子逻辑幂等写入。
+#   本文件仅描述初始化口径，供离线部署核对，无需手工执行。
+#   生产环境部署后请第一时间修改管理员密码与 JWT 密钥（.env）。
+# ============================================================
+
+env: production
+
+admin:
+  username: admin
+  # 默认密码 admin123，首次登录后请立即修改
+  defaultPassword: admin123
+  nickname: 管理员
+  email: admin@scheduler.local
+
+builtinRoles:
+  - code: admin
+    name: 管理员
+    desc: 系统管理员，拥有全部权限
+  - code: operator
+    name: 运维人员
+    desc: 可管理任务、查看执行与节点
+  - code: viewer
+    name: 访客
+    desc: 只读权限
+
+# 节点不预置假数据；请在「节点管理」中新增真实 worker
+nodes: []

@@ -10,6 +10,7 @@ import (
 	"scheduler-platform/internal/executor"
 	"scheduler-platform/internal/model"
 	"scheduler-platform/internal/store"
+	"scheduler-platform/pkg/app/config"
 	"scheduler-platform/pkg/ilog"
 	"scheduler-platform/pkg/metric"
 	"scheduler-platform/pkg/tracex"
@@ -52,6 +53,11 @@ func (s *Scheduler) Start() {
 	}
 	s.cron.Start()
 	ilog.Infof("scheduler started with %d jobs", len(s.entryTask))
+
+	// 启动数据保留策略的每日定时清理（每天 03:07 执行，非业务任务）
+	if _, err := s.cron.AddFunc("7 3 * * *", func() { s.runRetentionCleanup() }); err != nil {
+		ilog.Warnf("register retention cleanup job failed: %v", err)
+	}
 
 	// 启动节点指标定时采集
 	s.nodeScrapeStop = make(chan struct{})
@@ -102,12 +108,14 @@ func (s *Scheduler) nodeScrapeLoop() {
 func (s *Scheduler) scrapeAllNodes() {
 	ctx := tracex.NewContext(context.Background())
 	nodes := s.store.ListNodes(ctx)
+	// 全局出站代理（若启用则经代理抓取）
+	proxyClient := s.store.ProxyConfig(ctx).Client(10 * time.Second)
 	success := 0
 	for _, n := range nodes {
 		if n.MetricsURL == "" {
 			continue
 		}
-		result := metric.ScrapePrometheus(n.MetricsURL, 10*time.Second)
+		result := metric.ScrapePrometheusWith(n.MetricsURL, 10*time.Second, proxyClient)
 		if result.Error != "" {
 			ilog.Trace(ctx).Warnf("scrape node %s (%s) failed: %s", n.Name, n.MetricsURL, result.Error)
 			continue
@@ -196,5 +204,23 @@ func (s *Scheduler) execute(taskID int64) {
 	ilog.Trace(ctx).Infof("cron triggered task %d (%s)", t.ID, t.Name)
 	if s.executor != nil {
 		s.executor.Trigger(ctx, t)
+	}
+}
+
+// runRetentionCleanup 按配置执行数据保留清理：删除超期的执行记录（保留最近 N 天）、
+// 每个任务超量的旧记录，以及超过保留天数的节点指标采样。
+func (s *Scheduler) runRetentionCleanup() {
+	ctx := tracex.NewContext(context.Background())
+	cfg := config.GetCurrentConfig()
+
+	execDel, logDel := s.store.CleanupExecutions(ctx,
+		cfg.Retention.ExecutionRetainDays, cfg.Retention.ExecutionMaxPerTask)
+	if execDel > 0 || logDel > 0 {
+		ilog.Trace(ctx).Infof("retention cleanup: deleted %d executions, %d logs", execDel, logDel)
+	}
+
+	nodeDel := s.store.CleanupNodeMetricsSamples(ctx, cfg.Retention.NodeMetricsRetainDays)
+	if nodeDel > 0 {
+		ilog.Trace(ctx).Infof("retention cleanup: deleted %d node metric samples", nodeDel)
 	}
 }

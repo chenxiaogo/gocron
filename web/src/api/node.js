@@ -20,6 +20,19 @@ export function deleteNode(id) {
   return request.delete(`/nodes/${id}`)
 }
 
-export function scrapeNode(id) {
-  return request.post(`/nodes/${id}/scrape`)
+export function getNodeMetrics(id, range) {
+  return request.get(`/nodes/${id}/metrics`, { params: { range } })
+}
+
+// 全局出站代理（机场类 HTTP / SOCKS5）
+export function getGlobalProxy() {
+  return request.get('/node-proxy')
+}
+
+export function saveGlobalProxy(data) {
+  return request.put('/node-proxy', data)
+}
+
+export function testGlobalProxy(target) {
+  return request.post('/node-proxy/test', { target })
 }

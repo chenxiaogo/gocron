@@ -7,18 +7,29 @@
           <span>菜单管理</span>
         </div>
         <div class="card-actions">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索菜单名/路径/权限码"
+            clearable
+            style="width: 240px"
+            :prefix-icon="Search"
+            @keyup.enter="onSearch"
+            @clear="onSearch"
+          />
           <el-button :icon="Refresh" @click="loadMenus">刷新</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreate(null)">新增顶级菜单</el-button>
         </div>
       </div>
 
       <el-table
-        :data="menuTree"
+        :key="tableKey"
+        :data="filteredTree"
         row-key="id"
         :tree-props="{ children: 'children' }"
         v-loading="loading"
         style="width: 100%"
         empty-text="暂无菜单"
+        default-expand-all
       >
         <el-table-column prop="title" label="菜单名" min-width="160" />
         <el-table-column prop="path" label="路由路径" min-width="140">
@@ -35,7 +46,7 @@
         <el-table-column prop="permCode" label="权限码" min-width="120">
           <template #default="{ row }">{{ row.permCode || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="270" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="openCreate(row)">新增子项</el-button>
             <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
@@ -121,13 +132,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Refresh, Plus, Grid } from '@element-plus/icons-vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { Refresh, Plus, Grid, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listMenus, createMenu, updateMenu, deleteMenu, saveMenuBtns } from '@/api/menu'
 
 const loading = ref(false)
 const menuTree = ref([])
+const keyword = ref('')
+const tableKey = ref(0)
 const dialogVisible = ref(false)
 const btnsVisible = ref(false)
 const btnMenu = ref(null)
@@ -149,9 +162,39 @@ async function loadMenus() {
   loading.value = true
   try {
     menuTree.value = await listMenus()
+    tableKey.value += 1
   } finally {
     loading.value = false
   }
+}
+
+// filteredTree 按 keyword 过滤菜单树：命中节点保留，同时保留其父级链路；
+// 父节点命中时整棵子树保留（保留层级，便于查看与操作）。
+const filteredTree = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return menuTree.value
+  const filter = (nodes) =>
+    (nodes || []).reduce((acc, node) => {
+      const selfMatch = matchMenu(node, kw)
+      const children = filter(node.children)
+      if (selfMatch) {
+        acc.push({ ...node, children: node.children || [] })
+      } else if (children.length) {
+        acc.push({ ...node, children })
+      }
+      return acc
+    }, [])
+  return filter(menuTree.value)
+})
+
+function matchMenu(node, kw) {
+  const fields = [node.title, node.name, node.path, node.permCode, node.component]
+  return fields.some((f) => (f || '').toLowerCase().includes(kw))
+}
+
+function onSearch() {
+  // 回车/清空时重建表格，使过滤结果自动全部展开
+  tableKey.value += 1
 }
 
 function openCreate(parent) {

@@ -44,10 +44,21 @@ type Config struct {
 	Server   ServerConfig   `json:"server" yaml:"server" mapstructure:"server"`
 	Database DatabaseConfig `json:"database" yaml:"database" mapstructure:"database"`
 	Security SecurityConfig `json:"security" yaml:"security" mapstructure:"security"`
-	Logger   LoggerConfig   `json:"logger" yaml:"logger" mapstructure:"logger"`
-	Metrics  MetricsConfig  `json:"metrics" yaml:"metrics" mapstructure:"metrics"`
-	Cache    CacheConfig    `json:"cache" yaml:"cache" mapstructure:"cache"`
-	LastUp   time.Time      `json:"-" yaml:"-"`
+	Logger    LoggerConfig    `json:"logger" yaml:"logger" mapstructure:"logger"`
+	Metrics   MetricsConfig   `json:"metrics" yaml:"metrics" mapstructure:"metrics"`
+	Cache     CacheConfig     `json:"cache" yaml:"cache" mapstructure:"cache"`
+	Retention RetentionConfig `json:"retention" yaml:"retention" mapstructure:"retention"`
+	LastUp    time.Time       `json:"-" yaml:"-"`
+}
+
+// RetentionConfig 数据保留策略：后台定时清理执行记录与节点指标采样。
+type RetentionConfig struct {
+	// ExecutionRetainDays 执行记录保留天数（按 started_at 删除更早记录），默认 30。
+	ExecutionRetainDays int `json:"executionRetainDays" yaml:"executionRetainDays" mapstructure:"executionRetainDays"`
+	// ExecutionMaxPerTask 单任务最多保留的执行条数（超量删除最旧的），0 表示不限制。
+	ExecutionMaxPerTask int `json:"executionMaxPerTask" yaml:"executionMaxPerTask" mapstructure:"executionMaxPerTask"`
+	// NodeMetricsRetainDays 节点指标采样保留天数，默认 7。
+	NodeMetricsRetainDays int `json:"nodeMetricsRetainDays" yaml:"nodeMetricsRetainDays" mapstructure:"nodeMetricsRetainDays"`
 }
 
 type AppConfig struct {
@@ -137,6 +148,11 @@ func New() *Config {
 			RedisDB:       0,
 			RedisPoolSize: 0,
 			DialTimeout:   5 * time.Second,
+		},
+		Retention: RetentionConfig{
+			ExecutionRetainDays:   30,
+			ExecutionMaxPerTask:   500,
+			NodeMetricsRetainDays: 7,
 		},
 		LastUp: time.Now(),
 	}
@@ -356,4 +372,10 @@ cache:
   redisDb: 0
   redisPoolSize: 0
   dialTimeout: 5s
+
+# 数据保留策略（后台每日定时清理）
+retention:
+  executionRetainDays: 30   # 执行记录保留天数（按 started_at 删除更早记录）
+  executionMaxPerTask: 500  # 单任务最多保留条数，超量删除最旧的（0 表示不限制）
+  nodeMetricsRetainDays: 7  # 节点指标采样保留天数
 `

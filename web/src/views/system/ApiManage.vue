@@ -7,12 +7,21 @@
           <span>接口管理</span>
         </div>
         <div class="card-actions">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索路径/分组/描述"
+            clearable
+            :prefix-icon="Search"
+            style="width: 220px"
+            @keyup.enter="onSearch"
+            @clear="onSearch"
+          />
           <el-button :icon="Refresh" @click="loadApis">刷新</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreate">新增接口</el-button>
         </div>
       </div>
 
-      <el-table :data="apis" v-loading="loading" style="width: 100%" empty-text="暂无接口">
+      <el-table :data="filteredApis" v-loading="loading" style="width: 100%" empty-text="暂无接口">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="group" label="分组" width="120" />
         <el-table-column label="方法" width="90">
@@ -60,15 +69,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Refresh, Plus, Link } from '@element-plus/icons-vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { Refresh, Plus, Link, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listApis, createApi, updateApi, deleteApi } from '@/api/api'
 
 const loading = ref(false)
 const apis = ref([])
+const keyword = ref('')
 const dialogVisible = ref(false)
 const form = reactive({ id: null, path: '', method: 'GET', group: '', description: '' })
+
+const filteredApis = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return apis.value
+  return apis.value.filter((a) =>
+    [a.path, a.group, a.description, a.method].some((f) => (f || '').toLowerCase().includes(kw))
+  )
+})
+
+function onSearch() {}
 
 function methodType(m) {
   if (m === 'GET') return 'success'
